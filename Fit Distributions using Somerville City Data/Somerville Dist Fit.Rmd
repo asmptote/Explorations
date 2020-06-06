@@ -1,0 +1,180 @@
+---
+title: "Fit Distributions to Somerville City Data"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# City Wages
+Somerville wages: https://data.somervillema.gov/Finance/City-Of-Somerville-Weekly-Payroll-Gross-Wages-Over/q35q-jc9v
+
+```{r Load Data}
+SomWage<-read.csv("./Data/City_Of_Somerville_Weekly_Payroll_Gross_Wages_Over_50K_2016.csv")
+head(SomWage)
+str(SomWage)
+SomWage[1,]
+#Will use Total Gross. Subtract 50,000 because that is cut off
+SomWage.TGC<-SomWage$Total.Gross.Calc-50000
+
+SomWage.hist<-hist(SomWage.TGC,breaks="FD",probability=TRUE,main="Wage Histogram")
+```
+
+I will fit gross wages of Somerville city employees to a parametric distribution. The data is truncated at $50000$. It looks like it could follow an exponential distirbution.
+
+
+```{r Exponential}
+m<-mean(SomWage.TGC);m
+v<-var(SomWage.TGC);v
+lambda<-1/m;lambda
+#check variance
+((m^2 - v) /v);m^2
+
+plot(SomWage.hist,freq=FALSE, main="Wage Histogram")
+curve(dexp(x,lambda), col = "blue", add= TRUE) 
+```
+
+The fit looks pretty good, but maybe a Gamma would be better.
+
+```{r Gamma}
+beta<-m/v;beta
+alpha<-beta*m;alpha
+
+plot(SomWage.hist,freq=FALSE, main="Wage Histogram")
+curve(dgamma(x,shape=alpha, rate=beta), col = "forest green", add= TRUE) 
+```
+
+The Gamma starts at a low frequency while the dataset starts at a high frequency so the fit is not good. 
+
+
+Now I use a $\chi^2$-test for goodness of fit.
+```{r chi square exp}
+#choose bins 
+min(SomWage.TGC);max(SomWage.TGC)
+plot(SomWage.hist,freq=FALSE, main="Wage Histogram")
+abline(v = 6000, col = "red")
+abline(v = 15000, col = "red")
+abline(v =30000, col = "red")
+abline(v =60000, col = "red")
+abline(v =100000, col = "red")
+
+#Obs table
+ob1<-sum(SomWage.TGC<=6000)
+ob2<-sum(SomWage.TGC<=15000)
+ob3<-sum(SomWage.TGC<=30000)
+ob4<-sum(SomWage.TGC<=60000)
+ob5<-sum(SomWage.TGC<=100000)
+ob6<-sum(SomWage.TGC>100000)
+
+Observed<-c(ob1,ob2-ob1,ob3-ob2,ob4-ob3,ob5-ob4,ob6);Observed
+
+#expected
+expf<-function(x) dexp(x,lambda)
+eb1<-integrate(expf,0,6000)$value
+eb2<-integrate(expf,6000,15000)$value
+eb3<-integrate(expf,15000,30000)$value
+eb4<-integrate(expf,30000,60000)$value
+eb5<-integrate(expf,60000,100000)$value
+eb6<- 1-integrate(expf,0,100000)$value
+
+length(SomWage.TGC)
+Expected <- 640*c(eb1,eb2,eb3,eb4,eb5,eb6); Expected
+
+#chi sq
+Chi<-sum((Observed-Expected)^2/Expected);Chi #23.30
+
+#how probable get this large of a test stat
+#df = 6-1-1=4  6 buckets, calculated lambda from data
+Pval<-pchisq(Chi,4,lower.tail=FALSE);Pval #.0001105
+#very low
+```
+
+I can also perform a similar test but through simulation instead of using a $\chi^2$ distribution directly
+```{r simulation Exp}
+#draw 10k samples from the exp distribution
+N = 10^4; result = numeric(N)
+for (i in 1:N) {
+  expData = rexp(640,lambda) 
+  Counts=numeric(6) 
+  Counts[1] = sum(expData <= 6000) 
+  Counts[2] = sum((expData > 6000) & (expData <= 15000))
+  Counts[3] = sum((expData > 15000) & (expData <= 30000))
+  Counts[4] = sum((expData > 30000) & (expData <= 60000))
+  Counts[5] = sum((expData > 60000) & (expData <= 100000))
+  Counts[6] = sum(expData > 100000)
+  result[i] = sum((Counts-Expected)^2/Expected)
+}
+hist(result, breaks = "FD",probability =TRUE)
+curve(dchisq(x, df=4), col = "blue", add= TRUE)
+#calculated lambda from the data so should have 4 df but df=5 has a much better fit to simulation
+curve(dchisq(x, df=5), col = "Dark Green", add= TRUE) 
+abline(v = Chi, col = "red")
+sum(result >= Chi)/N;  
+```
+
+In both approaches, I get a high test statistic and low probability of getting this distribution from an exponential with this lambda, indicating a poor fit.
+<br><br>
+# Building Permits
+Somerville building permits: https://data.somervillema.gov/City-Services/ISD-Building-Permit-Daily-Applications/q3yh-mp87
+
+I wanted a dataset that could be a good fit for a normal distribution. Each row in this dataset is an application. I'm expecting that the distribution of the number of permit applications each day is approximately normal. 
+
+```{r load data}
+Permit<-read.csv("./Data/ISD_Building_Permit_Daily_Applications.csv")
+head(Permit)
+str(Permit)
+min(as.Date(Permit$IssueDate,format = "%m/%d/%Y"))
+max(as.Date(Permit$IssueDate,format = "%m/%d/%Y"))
+min(as.numeric(as.Date(Permit$IssueDate,format = "%m/%d/%Y")))
+
+IssueDate<-as.numeric(as.Date(Permit$IssueDate,format = "%m/%d/%Y"))-16211
+freq<-table(IssueDate)
+
+Permit.hist<-hist(freq,breaks="FD",probability=TRUE,main="Permit Application Histogram")
+```
+
+This appears to be more Gamma than Guassian, but it could work as a truncated normal distribution.
+
+```{r fit N}
+m<-mean(freq);m
+sd<-sd(freq);sd
+ln<-length(freq)
+plot(Permit.hist, freq=FALSE, main="Permit Application Historgram")
+curve(dnorm(x, m, sd), add = TRUE, col = "red")
+#actually not bad if we consider a truncated normal distribution
+
+#for truncated normal P(X|X>0)=P(XnX>0)/P(X>0)
+fnN<-function(x) dnorm(x,m,sd)
+XGT0<-integrate(fnN,0,Inf)$value;trunc #P(X>0)
+XLT0<-1-XGT0
+m2<-m*XGT0
+sd2<-sd*sqrt(XGT0)
+curve(dnorm(x, m2, sd2)/XGT0, add = TRUE, col = "blue")
+```
+
+Now I do the chi-square test on the truncated normal distribution, bucketing with deciles.
+
+```{r chi sq N}
+#10% in each
+#.1=P(0<X<a)/P(X>0)
+#.1*P(X>0)+P(X<0)=P(X<a)
+dec <- qnorm(seq(0.0, 1, by = 0.1)*XGT0+XLT0, m2, sd2);dec
+Expected<-rep(ln/10,10); Expected
+  
+obs<-numeric(10)
+for (i in 1:10)
+  obs[i] <- sum((freq >= dec[i]) & (freq <= dec[i+1]) ); obs
+
+chi<-sum((obs-Expected)^2/Expected);chi  #16.24
+#df=10-1-2=7
+curve(dchisq(x, df = 7),from=0,to=50)
+abline(v=chi, col = "red")
+```
+
+This shows that once again the fitted model is not very good. 
+
+
