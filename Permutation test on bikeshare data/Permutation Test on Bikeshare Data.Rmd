@@ -1,0 +1,94 @@
+---
+title: "Permutation Test on Bikeshare Data"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Is there a difference in workday and non-workday daily ridership?
+
+## Dataset
+
+*bike share dataset
+from UCI repository: https://archive.ics.uci.edu/ml/datasets/bike+sharing+dataset <br>
+Hadi Fanaee-T <br>
+Laboratory of Artificial Intelligence and Decision Support (LIAAD), University of Porto <br>
+INESC Porto, Campus da FEUP <br>
+Rua Dr. Roberto Frias, 378  <br>
+4200 - 465 Porto, Portugal* <br>
+
+```{r dataset}
+bike<-read.csv("./Data/Bike Sharing - Day.csv")
+head(bike)
+str(bike)
+
+bk<-bike[,c("workingday","cnt")]
+# write.csv(bk,"./Data/bk.csv")
+
+####################################
+# bk<-read.csv("./Data/bk.csv")
+# head(bk)
+
+#find some summary stats
+length(bk$workingday)
+sum(bk$workingday)
+sum(bk$workingday==0)
+
+hist(bk$cnt,breaks="FD",main = "Histogram of Daily Ridership")
+hist(bk$cnt[bk$workingday==1],breaks="FD",main = "Histogram of Workday Ridership")
+hist(bk$cnt[bk$workingday==0],breaks="FD",main = "Histogram of Non-Workday Ridership")
+
+tot.mean<-mean(bk$cnt)
+tot.med <-median(bk$cnt)
+tot.var<-var(bk$cnt)
+
+tot.mean;tot.med;tot.var
+
+wrk.mean<-mean(bk$cnt[bk$workingday==1])
+wrk.med <-median(bk$cnt[bk$workingday==1])
+wrk.var<-var(bk$cnt[bk$workingday==1])
+
+wrk.mean;wrk.med;wrk.var
+
+off.mean<-mean(bk$cnt[bk$workingday==0])
+off.med <- median(bk$cnt[bk$workingday==0])
+off.var<-var(bk$cnt[bk$workingday==0])
+
+off.mean;off.med;off.var
+
+obs<-wrk.mean-off.mean;obs
+```
+
+
+
+## Permutation Test
+
+```{r permutation test}
+
+#permutation test
+N<-10000
+diffs<-numeric(N)
+for (i in 1:N) {
+  samp<-sample(bk$workingday)
+  wrkAvg<-mean(bk$cnt[samp==1])
+  offAvg<-mean(bk$cnt[samp==0])
+  diffs[i]<-wrkAvg-offAvg
+}
+mean(diffs)
+hist(diffs, breaks="FD")
+
+abline(v=obs,col="red")
+#probability that a difference as large as observed could come from a random subset
+pval<-(sum(diffs>=obs)+1)/(N+1) ;pval
+
+```
+
+There is fairly strong evidence that there are more bike share riders on average on workdays. I would reject the null hypothesis that workdays and non workdays have the same ridership at the 95% significance level.
+
+
+
+
